@@ -1,0 +1,109 @@
+#include <gtk/gtk.h>
+
+GtkWidget *g_lbl_hello;
+GtkWidget *g_lbl_count;
+
+typedef struct
+{
+	GtkWidget  *window;
+	guint       progress_id;
+} WorkerData;
+
+int main(int argc, char *argv[])
+{
+	GtkBuilder      *builder; 
+	GtkWidget       *window;
+
+	gtk_init(&argc, &argv);
+
+	builder = gtk_builder_new();
+	gtk_builder_add_from_file(builder, "window_main.glade", NULL);
+
+	window = GTK_WIDGET(gtk_builder_get_object(builder, "window_main"));
+	gtk_builder_connect_signals(builder, NULL);
+    
+	// get pointers to the two labels
+	g_lbl_hello = GTK_WIDGET(gtk_builder_get_object(builder, "lbl_hello"));
+	g_lbl_count = GTK_WIDGET(gtk_builder_get_object(builder, "lbl_count"));
+
+	g_object_unref(builder);
+
+	gtk_widget_show(window);                
+	gtk_main();
+
+	return 0;
+}
+
+static gboolean
+update_progress_in_timeout(gpointer pbar)
+{
+	gtk_progress_bar_pulse(pbar);
+  
+	return TRUE; /* keep running */
+}
+
+static gboolean
+worker_finish_in_idle(gpointer data)
+{
+	WorkerData *wd = data;
+  
+	/* we're done, stop updating the progress bar */
+	g_source_remove(wd->progress_id);
+	/* and destroy everything */
+	gtk_widget_destroy(wd->window);
+	g_free(wd);
+  
+	return FALSE; /* stop running */
+}
+
+static gpointer
+worker(gpointer data)
+{
+	WorkerData *wd = data;
+  
+	/* hard work here */
+	g_usleep(5000000);
+  
+	/* we finished working, do something back in the main thread */
+	g_idle_add(worker_finish_in_idle, wd);
+  
+	return NULL;
+}
+
+// called when button is clicked
+void on_btn_hello_clicked()
+{
+	static unsigned int count = 0;
+	char str_count[30] = { 0 };
+    
+	gtk_label_set_text(GTK_LABEL(g_lbl_hello), "Hello YE MYAT THU!");
+	count++;
+	sprintf(str_count, "%d", count);
+	gtk_label_set_text(GTK_LABEL(g_lbl_count), str_count);
+		
+	WorkerData *wd;
+	GThread    *thread;
+	GtkWidget  *pbar;
+  
+	wd = g_malloc(sizeof *wd);
+  
+	wd->window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+  
+	pbar = gtk_progress_bar_new();
+	gtk_container_add(GTK_CONTAINER(wd->window), pbar);
+  
+	gtk_widget_show_all(wd->window);
+  
+	/* add a timeout that will update the progress bar every 100ms */
+	wd->progress_id = g_timeout_add(200, update_progress_in_timeout, pbar);
+  
+	/* run the time-consuming operation in a separate thread */
+	thread = g_thread_new("worker", worker, wd);
+	g_thread_unref(thread);
+}
+
+// called when window is closed
+void on_window_main_destroy()
+{
+	gtk_main_quit();
+}
